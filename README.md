@@ -13,4 +13,13 @@ How to get it running
 
 * Install MySQL locally (I used version 5.7)
 
+* Create a database, specifically using this command
+
+    `CREATE DATABASE cti CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+
+    Otherwise there will be tons of weird encoding errors that seemed impossible to resolve
+    with python code alone. 
+
 * Setup a local mysql db user "ctiuser" with pass "ctipass" and a database named "cti" to keep it simple. These credentials are already put in `db.config.json` so you can change it if necessary, but again, just for simplicity. Normally the file would be put into gitignore, but doesn't matter for this project. 
+
+* run `python main.py`
