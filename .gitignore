@@ -1,3 +1,4 @@
+*.pyc
 ctienv/
 *aws.config.json
 *.mmdb
