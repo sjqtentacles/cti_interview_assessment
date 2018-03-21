@@ -12,3 +12,5 @@ How to get it running
 * Start a new virtualenv and install the packages from requirements.txt (assuming python 2.7)
 
 * Install MySQL locally (I used version 5.7)
+
+* Setup a local mysql db user "ctiuser" with pass "ctipass" and a database named "cti" to keep it simple. These credentials are already put in `db.config.json` so you can change it if necessary, but again, just for simplicity. Normally the file would be put into gitignore, but doesn't matter for this project. 

@@ -1,0 +1,10 @@
+{
+    "drivername": "mysql",
+    "username": "ctiuser",
+    "password": "ctipass",
+    "host": "localhost",
+    "database": "cti",
+    "query": {
+        "charset": "utf8"
+    }
+}

@@ -1,8 +1,13 @@
 import boto3
 import json
 import geoip2.database
-from user_agents import parse
+import user_agents
 import argparse
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, Table, Column, MetaData
+from sqlalchemy.engine.url import URL
+from sqlalchemy.dialects import mysql
+from models import GeoIP, UserAgentLog
 
 def ip_to_geo(ip_str, geo_reader):
     output = {}
@@ -16,21 +21,36 @@ def ip_to_geo(ip_str, geo_reader):
         output['State'] = response.subdivisions.most_specific.name
     except:
         pass
-    return output
+    return GeoIP(
+        ip_addr=ip_str,
+        latitude=output['Latitude'],
+        longitude=output['Longitude'],
+        postal=output['Zipcode'],
+        city=output['City'],
+        country=output['Country'],
+        state=output['State']
+    )
 
 def parse_user_agent(ua_str):
     output = {}
     try:
-        user_agent = parse(ua_str)
-        output['Browser'] = user_agent.browser.family
-        output['OperatingSystem'] = user_agent.os.family
-        output['DeviceType'] = user_agent.device.family
+        ua = user_agents.parse(ua_str)
+        output['Browser'] = ua.browser.family
+        output['OperatingSystem'] = ua.os.family
+        output['DeviceType'] = ua.device.family
     except:
         pass
-    return output
+    return UserAgentLog(
+            browser=output['Browser'],
+            os=output['OperatingSystem'],
+            device=output['DeviceType']
+        )
 
-if __name__=='__main__':
+def load_credentials(fname):
+    with open(fname) as f:
+        return json.loads(f.read())
 
+def load_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--creds', 
         type=str, 
@@ -40,29 +60,50 @@ if __name__=='__main__':
         type=str,
         help="Geo database file path, (default: 'GeoLite2-City.mmdb')",
         default= 'GeoLite2-City.mmdb')
+    return parser
 
-    args = parser.parse_args()
+def load_mysql_engine(mysql_creds):
+    SQLALCHEMY_DATABASE_URI = URL(**mysql_creds)
+    return create_engine(SQLALCHEMY_DATABASE_URI, convert_unicode=True)
 
-    creds = {}
-    with open(args.creds) as f:
-        creds = json.loads(f.read())
+def initiate_tables(mysql_engine):
+    GeoIP.metadata.create_all(mysql_engine)
+    UserAgentLog.metadata.create_all(mysql_engine)
+
+if __name__=='__main__':
+    args = load_parser().parse_args()
+
+    aws_creds = load_credentials(args.creds)
+    mysql_creds = load_credentials('db.config.json')
 
     session = boto3.Session(
-        aws_access_key_id = creds['access_key'],
-        aws_secret_access_key = creds['secret']
+        aws_access_key_id = aws_creds['access_key'],
+        aws_secret_access_key = aws_creds['secret']
     )
-
     s3 = session.resource('s3')
-    bucket = s3.Bucket(creds['bucket'])
+    bucket = s3.Bucket(aws_creds['bucket'])
 
-    filelog_meta = bucket.Object(creds['object_key']).get()
+    filelog_meta = bucket.Object(aws_creds['object_key']).get()
     filelog = filelog_meta['Body'].read().decode('utf-8')
+    lines = filter(lambda x: len(x)>0, filelog.split('\n'))
 
-    lines = filelog.split('\n')
     # I found a free database on maxmind website for geoip2 python package
     geodb_reader = geoip2.database.Reader(args.geodb)
 
-    for line in lines[0:10]:
-        ip_addr = line.split()[0]
-        print ip_to_geo(ip_addr, geodb_reader)
-        print parse_user_agent(line)
+    mysqlDB = load_mysql_engine(mysql_creds)
+    initiate_tables(mysqlDB)
+    
+    Session = sessionmaker(bind=mysqlDB)
+    session = Session()
+
+    to_commit = []
+
+    for line in lines:
+        useragent_obj = parse_user_agent(line)
+        geoip_obj = ip_to_geo(line.split()[0], geodb_reader)
+        to_commit.append(useragent_obj)
+        to_commit.append(geoip_obj)
+
+    session.add_all(to_commit)    
+    session.commit()
+    session.close()
